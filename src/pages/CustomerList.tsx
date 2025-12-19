@@ -2,52 +2,49 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Search,
-  Filter,
   ChevronDown,
   Building2,
-  Phone,
-  MapPin,
-  Clock,
-  TrendingUp,
-  AlertTriangle,
-  CheckCircle,
-  ArrowRight,
-  RefreshCw
+  RefreshCw,
+  FilePlus,
+  Sparkles
 } from 'lucide-react';
 import { mockCustomers } from '../data/mockData';
-import type { CorporateCustomer } from '../data/mockData';
+import type { CorporateCustomer, CustomerType } from '../data/mockData';
 
-const statusMap = {
-  pending: { label: '待跟进', color: 'bg-orange-100 text-orange-700' },
-  following: { label: '跟进中', color: 'bg-blue-100 text-blue-700' },
-  applying: { label: '进件中', color: 'bg-purple-100 text-purple-700' },
-  approved: { label: '已批复', color: 'bg-green-100 text-green-700' },
-  rejected: { label: '已拒绝', color: 'bg-red-100 text-red-700' }
+const customerTypeMap: Record<CustomerType, { label: string; color: string; icon: React.ElementType }> = {
+  corporate: { label: '对公', color: 'bg-blue-100 text-blue-700', icon: Building2 },
+  retail: { label: '零售', color: 'bg-purple-100 text-purple-700', icon: Building2 },
+  individual: { label: '个体户', color: 'bg-orange-100 text-orange-700', icon: Building2 }
 };
 
-const riskMap = {
-  low: { label: '低风险', color: 'text-green-600', icon: CheckCircle },
-  medium: { label: '中风险', color: 'text-yellow-600', icon: AlertTriangle },
-  high: { label: '高风险', color: 'text-red-600', icon: AlertTriangle }
+const customerLevelMap: Record<string, { color: string }> = {
+  '战略客户': { color: 'bg-red-100 text-red-700' },
+  '核心客户': { color: 'bg-orange-100 text-orange-700' },
+  '有效客户': { color: 'bg-green-100 text-green-700' }
 };
 
 export default function CustomerList() {
   const navigate = useNavigate();
   const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState('all');
   const [industryFilter, setIndustryFilter] = useState('all');
+  const [customerLevelFilter, setCustomerLevelFilter] = useState('all');
 
-  const filteredCustomers = mockCustomers.filter((customer) => {
-    const matchesSearch =
-      customer.companyName.includes(searchTerm) ||
-      customer.industry.includes(searchTerm) ||
-      customer.legalRepresentative.includes(searchTerm);
-    const matchesStatus = statusFilter === 'all' || customer.status === statusFilter;
+  // 只显示对公客户
+  const corporateCustomers = mockCustomers.filter(c => c.customerType === 'corporate');
+
+  const filteredCustomers = corporateCustomers.filter((customer) => {
+    const searchLower = searchTerm.toLowerCase();
+    const matchesSearch = searchTerm === '' ||
+      customer.companyName.toLowerCase().includes(searchLower) ||
+      customer.industry.toLowerCase().includes(searchLower) ||
+      (customer.aiInsight && customer.aiInsight.toLowerCase().includes(searchLower)) ||
+      (customer.needTags && customer.needTags.some(tag => tag.toLowerCase().includes(searchLower)));
     const matchesIndustry = industryFilter === 'all' || customer.industry === industryFilter;
-    return matchesSearch && matchesStatus && matchesIndustry;
+    const matchesLevel = customerLevelFilter === 'all' || customer.customerLevel === customerLevelFilter;
+    return matchesSearch && matchesIndustry && matchesLevel;
   });
 
-  const industries = [...new Set(mockCustomers.map((c) => c.industry))];
+  const industries = [...new Set(corporateCustomers.map((c) => c.industry))];
 
   const handleCustomerClick = (customer: CorporateCustomer) => {
     navigate(`/customers/${customer.id}`);
@@ -59,9 +56,9 @@ export default function CustomerList() {
       <header className="bg-white border-b border-gray-200 px-6 py-4">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-xl font-semibold text-gray-900">客户触达</h1>
+            <h1 className="text-xl font-semibold text-gray-900">AI 商机洞察</h1>
             <p className="text-sm text-gray-500 mt-1">
-              共 {filteredCustomers.length} 家对公客户
+              共 {filteredCustomers.length} 条商机
             </p>
           </div>
           <div className="flex items-center gap-3">
@@ -88,7 +85,7 @@ export default function CustomerList() {
             <Search size={18} className="text-gray-400 ml-3 flex-shrink-0" />
             <input
               type="text"
-              placeholder="搜索企业名称、行业、法人..."
+              placeholder="搜索客户名称、行业、洞察、需求..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               style={{ border: 0, outline: 0 }}
@@ -96,20 +93,18 @@ export default function CustomerList() {
             />
           </div>
 
-          {/* 状态筛选 */}
+          {/* 客户类型筛选 */}
           <div className="flex items-center border border-gray-300 rounded-lg bg-white focus-within:ring-2 focus-within:ring-green-500">
             <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
+              value={customerLevelFilter}
+              onChange={(e) => setCustomerLevelFilter(e.target.value)}
               style={{ border: 0, outline: 0 }}
               className="appearance-none bg-transparent px-4 py-2 pr-2 text-sm cursor-pointer"
             >
-              <option value="all">全部状态</option>
-              <option value="pending">待跟进</option>
-              <option value="following">跟进中</option>
-              <option value="applying">进件中</option>
-              <option value="approved">已批复</option>
-              <option value="rejected">已拒绝</option>
+              <option value="all">全部类型</option>
+              <option value="战略客户">战略客户</option>
+              <option value="核心客户">核心客户</option>
+              <option value="有效客户">有效客户</option>
             </select>
             <ChevronDown size={16} className="text-gray-400 mr-3 flex-shrink-0" />
           </div>
@@ -132,10 +127,13 @@ export default function CustomerList() {
             <ChevronDown size={16} className="text-gray-400 mr-3 flex-shrink-0" />
           </div>
 
-          {/* 更多筛选 */}
-          <button className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg text-sm text-gray-600 hover:bg-gray-50 transition-all">
-            <Filter size={16} />
-            更多筛选
+          {/* AI 建档按钮 */}
+          <button
+            onClick={() => window.open('https://lanhuapp.com/link/#/invite?sid=qX0LWceD', '_blank')}
+            className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700 transition-all"
+          >
+            <FilePlus size={16} />
+            AI 建档
           </button>
         </div>
       </div>
@@ -144,9 +142,16 @@ export default function CustomerList() {
       <div className="flex-1 overflow-auto p-6">
         <div className="grid gap-4">
           {filteredCustomers.map((customer) => {
-            const status = statusMap[customer.status];
-            const risk = riskMap[customer.riskLevel];
-            const RiskIcon = risk.icon;
+            const customerType = customerTypeMap[customer.customerType];
+            const TypeIcon = customerType.icon;
+            const levelStyle = customer.customerLevel ? customerLevelMap[customer.customerLevel] : null;
+
+            // 根据客户类型设置不同的图标背景色
+            const iconBgColor = customer.customerType === 'corporate'
+              ? 'from-blue-500 to-blue-600'
+              : customer.customerType === 'retail'
+              ? 'from-purple-500 to-purple-600'
+              : 'from-orange-500 to-orange-600';
 
             return (
               <div
@@ -154,104 +159,60 @@ export default function CustomerList() {
                 onClick={() => handleCustomerClick(customer)}
                 className="bg-white rounded-xl border border-gray-200 p-5 hover:shadow-lg hover:border-green-300 transition-all cursor-pointer group"
               >
-                <div className="flex items-start justify-between">
-                  {/* 左侧企业信息 */}
-                  <div className="flex-1">
-                    <div className="flex items-center gap-3">
-                      <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl flex items-center justify-center">
-                        <Building2 size={24} className="text-white" />
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <h3 className="text-lg font-semibold text-gray-900">
-                            {customer.companyName}
-                          </h3>
-                          <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${status.color}`}>
-                            {status.label}
-                          </span>
-                          <span className={`flex items-center gap-1 text-xs ${risk.color}`}>
-                            <RiskIcon size={14} />
-                            {risk.label}
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-4 mt-1 text-sm text-gray-500">
-                          <span>{customer.industry}</span>
-                          <span>·</span>
-                          <span>注册资本 {customer.registeredCapital}</span>
-                          <span>·</span>
-                          <span>成立于 {customer.establishedYear} 年</span>
-                        </div>
-                      </div>
+                {/* 第一行：企业名称、行业、客户类型、AI建档 */}
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className={`w-10 h-10 bg-gradient-to-br ${iconBgColor} rounded-lg flex items-center justify-center`}>
+                      <TypeIcon size={20} className="text-white" />
                     </div>
-
-                    {/* 详细信息 */}
-                    <div className="mt-4 flex flex-wrap gap-x-6 gap-y-2">
-                      <div className="flex items-center gap-2 text-sm">
-                        <span className="text-gray-400">法人代表</span>
-                        <span className="text-gray-700">{customer.legalRepresentative}</span>
-                      </div>
-                      <div className="flex items-center gap-2 text-sm">
-                        <Phone size={14} className="text-gray-400 flex-shrink-0" />
-                        <span className="text-gray-700">
-                          {customer.contactPerson} {customer.contactPhone}
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-base font-semibold text-gray-900">
+                        {customer.companyName}
+                      </h3>
+                      <span className="text-sm text-gray-500">{customer.industry}</span>
+                      {customer.customerLevel && levelStyle && (
+                        <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${levelStyle.color}`}>
+                          {customer.customerLevel}
                         </span>
-                      </div>
-                      <div className="flex items-center gap-2 text-sm">
-                        <TrendingUp size={14} className="text-gray-400 flex-shrink-0" />
-                        <span className="text-gray-700">授信额度 {customer.creditAmount}</span>
-                      </div>
-                    </div>
-                    <div className="mt-2 flex items-center gap-2 text-sm">
-                      <MapPin size={14} className="text-gray-400 flex-shrink-0" />
-                      <span className="text-gray-700">{customer.address}</span>
-                    </div>
-
-                    {/* 标签和产品 */}
-                    <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2">
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs text-gray-400 whitespace-nowrap">已有产品:</span>
-                        <div className="flex flex-wrap gap-1">
-                          {customer.existingProducts.map((product) => (
-                            <span
-                              key={product}
-                              className="px-2 py-0.5 bg-gray-100 text-gray-600 rounded text-xs whitespace-nowrap"
-                            >
-                              {product}
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs text-gray-400 whitespace-nowrap">标签:</span>
-                        <div className="flex flex-wrap gap-1">
-                          {customer.tags.map((tag) => (
-                            <span
-                              key={tag}
-                              className="px-2 py-0.5 bg-green-50 text-green-700 rounded text-xs whitespace-nowrap"
-                            >
-                              {tag}
-                            </span>
-                          ))}
-                        </div>
-                      </div>
+                      )}
                     </div>
                   </div>
-
-                  {/* 右侧跟进信息 */}
-                  <div className="flex flex-col items-end gap-2 ml-6">
-                    <div className="flex items-center gap-1 text-sm text-gray-500">
-                      <Clock size={14} />
-                      <span>最近跟进: {customer.lastContactTime}</span>
-                    </div>
-                    <div className="text-sm text-gray-500">
-                      累计跟进 {customer.contactCount} 次
-                    </div>
-                    <button className="mt-4 flex items-center gap-2 px-4 py-2 bg-green-500 text-white rounded-lg text-sm font-medium opacity-0 group-hover:opacity-100 transition-all hover:bg-green-600">
-                      查看详情
-                      <ArrowRight size={16} />
-                    </button>
-                  </div>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      window.open('https://lanhuapp.com/link/#/invite?sid=qX0LWceD', '_blank');
+                    }}
+                    className="flex items-center gap-1 px-3 py-1.5 bg-green-600 text-white rounded-lg text-sm font-medium transition-all hover:bg-green-700"
+                  >
+                    <FilePlus size={14} />
+                    AI 建档
+                  </button>
                 </div>
+
+                {/* AI 核心洞察 */}
+                {customer.aiInsight && (
+                  <div className="mt-3 flex items-start gap-2 bg-gradient-to-r from-green-50 to-blue-50 rounded-lg px-3 py-2">
+                    <Sparkles size={14} className="text-green-600 mt-0.5 flex-shrink-0" />
+                    <p className="text-sm text-gray-700 leading-relaxed">{customer.aiInsight}</p>
+                  </div>
+                )}
+
+                {/* 客户需求标签 */}
+                {customer.needTags && customer.needTags.length > 0 && (
+                  <div className="mt-3 flex items-center gap-2">
+                    <span className="text-xs text-gray-400">客户需求:</span>
+                    <div className="flex flex-wrap gap-1.5">
+                      {customer.needTags.map((tag) => (
+                        <span
+                          key={tag}
+                          className="px-2 py-0.5 bg-blue-50 text-blue-700 rounded text-xs font-medium"
+                        >
+                          {tag}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             );
           })}
