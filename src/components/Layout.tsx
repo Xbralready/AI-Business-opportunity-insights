@@ -1,12 +1,23 @@
 import { useState } from 'react';
-import { Outlet, NavLink } from 'react-router-dom';
+import { Outlet, NavLink, useLocation } from 'react-router-dom';
 import { Home, UserCircle, User, Settings, Radio, Search, LogOut, Link, Grid3X3, ClipboardList, Megaphone, Briefcase, MoreHorizontal, Lightbulb } from 'lucide-react';
 import bankLogo from '../assets/bank-logo.jpg';
+import { usePageState } from '../context/PageStateContext';
 
 export default function Layout() {
   const [activeModule, setActiveModule] = useState('综合');
+  const { pageState, setPageState } = usePageState();
+  const location = useLocation();
 
   const modules = ['综合', '信贷', '营销'];
+  const pageStates = [
+    { key: 'normal', label: '正常状态', color: 'bg-green-500' },
+    { key: 'empty', label: '空状态', color: 'bg-gray-400' },
+    { key: 'error', label: '异常状态', color: 'bg-red-500' }
+  ] as const;
+
+  // 只在客户详情页显示状态切换
+  const isCustomerDetail = location.pathname.startsWith('/customers/') && location.pathname !== '/customers';
 
   return (
     <div className="flex flex-col min-h-screen bg-gray-50">
@@ -33,6 +44,26 @@ export default function Layout() {
             </button>
           ))}
         </div>
+
+        {/* 页面状态切换 - 仅在客户详情页显示 */}
+        {isCustomerDetail && (
+          <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1 ml-4">
+            {pageStates.map((state) => (
+              <button
+                key={state.key}
+                onClick={() => setPageState(state.key)}
+                className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all flex items-center gap-1.5 ${
+                  pageState === state.key
+                    ? `${state.color} text-white`
+                    : 'text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                <span className={`w-2 h-2 rounded-full ${pageState === state.key ? 'bg-white' : state.color}`} />
+                {state.label}
+              </button>
+            ))}
+          </div>
+        )}
 
         {/* 中间空白区域 */}
         <div className="flex-1" />

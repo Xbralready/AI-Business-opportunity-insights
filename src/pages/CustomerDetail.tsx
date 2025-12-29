@@ -13,7 +13,6 @@ import {
   Banknote,
   Wallet,
   Briefcase,
-  MapPin,
   Clock,
   ChevronRight,
   MessageSquare,
@@ -22,8 +21,17 @@ import {
   Award,
   Phone,
   Send,
-  MapPinned
+  MapPinned,
+  RefreshCw,
+  Loader2,
+  X,
+  AlertCircle,
+  ClipboardList,
+  FileQuestion,
+  Search,
+  Database
 } from 'lucide-react';
+import { usePageState } from '../context/PageStateContext';
 import {
   mockCustomers,
   mockCustomerProfile,
@@ -121,9 +129,129 @@ function NeedsWordCloud({ needs, highlightNeeds = [] }: { needs: { text: string;
   );
 }
 
+// 轮播文字组件 - 从下往上滑动切换
+function RotatingText({ texts, interval = 4000 }: { texts: string[]; interval?: number }) {
+  const [currentIndex, setCurrentIndex] = useState(0);
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCurrentIndex(prev => (prev + 1) % texts.length);
+    }, interval);
+    return () => clearInterval(timer);
+  }, [texts.length, interval]);
+
+  return (
+    <span className="inline-flex items-center overflow-hidden" style={{ height: '1.5em' }}>
+      <AnimatePresence mode="wait" initial={false}>
+        <motion.span
+          key={currentIndex}
+          initial={{ y: '100%', opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          exit={{ y: '-100%', opacity: 0 }}
+          transition={{
+            duration: 0.4,
+            ease: 'easeInOut'
+          }}
+        >
+          {texts[currentIndex]}
+        </motion.span>
+      </AnimatePresence>
+    </span>
+  );
+}
+
+// 空状态占位组件 - 带有情绪价值的缺省提醒
+function EmptyStateCard({
+  icon: Icon,
+  title,
+  descriptions,
+  tip,
+  color = 'gray'
+}: {
+  icon: typeof FileQuestion;
+  title: string;
+  descriptions: string[];
+  tip?: string;
+  color?: 'gray' | 'blue' | 'green' | 'orange' | 'purple';
+}) {
+  const colorClasses = {
+    gray: { bg: 'bg-gray-50', iconBg: 'bg-gray-100', icon: 'text-gray-400', border: 'border-gray-200' },
+    blue: { bg: 'bg-blue-50/50', iconBg: 'bg-blue-100', icon: 'text-blue-400', border: 'border-blue-100' },
+    green: { bg: 'bg-green-50/50', iconBg: 'bg-green-100', icon: 'text-green-400', border: 'border-green-100' },
+    orange: { bg: 'bg-orange-50/50', iconBg: 'bg-orange-100', icon: 'text-orange-400', border: 'border-orange-100' },
+    purple: { bg: 'bg-purple-50/50', iconBg: 'bg-purple-100', icon: 'text-purple-400', border: 'border-purple-100' },
+  };
+  const c = colorClasses[color];
+
+  return (
+    <div className={`flex flex-col items-center justify-center py-12 px-6 ${c.bg} rounded-xl border ${c.border} border-dashed`}>
+      <div className={`w-16 h-16 ${c.iconBg} rounded-full flex items-center justify-center mb-4`}>
+        <Icon size={28} className={c.icon} />
+      </div>
+      <h4 className="text-base font-medium text-gray-700 mb-2">{title}</h4>
+      <p className="text-sm text-gray-500 text-center max-w-xs mb-3 min-h-[40px]">
+        <RotatingText texts={descriptions} />
+      </p>
+      {tip && (
+        <div className="flex items-center gap-1.5 text-xs text-gray-400">
+          <Lightbulb size={12} />
+          <span>{tip}</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// 异常状态占位组件 - 带有重试按钮的错误提示
+function ErrorStateCard({
+  icon: Icon,
+  title,
+  description,
+  errorCode,
+  onRetry
+}: {
+  icon: typeof AlertCircle;
+  title: string;
+  description: string;
+  errorCode?: string;
+  onRetry?: () => void;
+}) {
+  return (
+    <div className="flex flex-col items-center justify-center py-10 px-6 bg-red-50/50 rounded-xl border border-red-200 border-dashed">
+      <div className="relative mb-4" style={{ width: '56px', height: '56px' }}>
+        <svg width="56" height="56" viewBox="0 0 56 56" className="absolute inset-0">
+          <circle cx="28" cy="28" r="28" fill="#fee2e2" />
+        </svg>
+        <div className="absolute inset-0 flex items-center justify-center">
+          <Icon size={26} className="text-red-500" />
+        </div>
+      </div>
+      <h4 className="text-base font-medium text-gray-700 mb-2">{title}</h4>
+      <p className="text-sm text-gray-500 text-center max-w-xs mb-4">
+        {description}
+      </p>
+      {errorCode && (
+        <div className="text-xs text-gray-400 mb-4">
+          错误代码：<span className="font-mono">{errorCode}</span>
+        </div>
+      )}
+      {onRetry && (
+        <button
+          onClick={onRetry}
+          className="flex items-center gap-1.5 px-4 py-2 bg-red-500 hover:bg-red-600 text-white text-sm font-medium rounded-lg transition-colors"
+        >
+          <RefreshCw size={14} />
+          重新加载
+        </button>
+      )}
+    </div>
+  );
+}
+
 export default function CustomerDetail() {
   const navigate = useNavigate();
   const { id } = useParams();
+  const { pageState } = usePageState();
   const customer = mockCustomers.find((c) => c.id === id) || mockCustomers[0];
   const profile = mockCustomerProfile;
   const handbook = mockActionHandbook;
@@ -132,8 +260,149 @@ export default function CustomerDetail() {
   const [selectedDimension, setSelectedDimension] = useState<string | null>('基本信息');
   const [adoptedTaskIds, setAdoptedTaskIds] = useState<string[]>([]);
 
-  const adoptTask = (taskId: string) => {
-    setAdoptedTaskIds((prev) => [...prev, taskId]);
+  // 空状态判断
+  const isEmpty = pageState === 'empty';
+  const isError = pageState === 'error';
+
+  // 空状态下的冷启动行动建议
+  const coldStartTasks: ActionTask[] = [
+    {
+      id: 'cold-1',
+      title: '快速风险初筛',
+      description: '查看企业司法/经营异常/舆情/企业征信等风险信息，判断该企业是否可推进合作。',
+      priority: 'high',
+      status: 'pending',
+      dueDate: '今天',
+      category: 'document',
+      aiExecutable: false,
+      suggestedScript: '登录企查查/天眼查，重点核查：①近3年司法诉讼 ②经营异常名录 ③负面舆情 ④企业征信评级。无重大风险可继续推进，有风险需标记并上报。'
+    },
+    {
+      id: 'cold-2',
+      title: '电话建联关键人并约见',
+      description: '优先触达财务负责人/经办人/决策人，添加微信，简述自我介绍+简述可提供的服务+重点进行见面预约。',
+      priority: 'high',
+      status: 'pending',
+      dueDate: '今天',
+      category: 'contact',
+      aiExecutable: false,
+      suggestedScript: '王总您好，我是常熟农商银行的李世伟，专门服务咱们这个行业的企业客户。我们有几款针对性的金融产品，想约您方便的时间当面介绍一下，您看这周哪天方便？'
+    },
+    {
+      id: 'cold-3',
+      title: '设置约见提醒',
+      description: 'T-1提醒，确认拜访对象、面访议题，携带资料。',
+      priority: 'medium',
+      status: 'pending',
+      dueDate: '约见前1天',
+      category: 'visit',
+      aiExecutable: false,
+      suggestedScript: '拜访前一天确认清单：①再次确认拜访时间和地点 ②准备公司介绍册、产品方案、成功案例 ③明确本次拜访的核心议题 ④整理客户已知信息，准备针对性问题'
+    }
+  ];
+
+  // 根据状态选择使用的任务列表
+  const displayTasks = isEmpty ? coldStartTasks : tasks;
+
+  // 刷新状态管理
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const [lastUpdateTime, setLastUpdateTime] = useState('2024-01-15 14:32:08');
+  const [refreshError, setRefreshError] = useState<string | null>(null);
+  const refreshTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // 格式化已等待时间
+  const formatElapsedTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    if (mins > 0) {
+      return `${mins} 分 ${secs} 秒`;
+    }
+    return `${secs} 秒`;
+  };
+
+  // 获取当前时间字符串
+  const getCurrentTimeString = () => {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    const hours = String(now.getHours()).padStart(2, '0');
+    const minutes = String(now.getMinutes()).padStart(2, '0');
+    const seconds = String(now.getSeconds()).padStart(2, '0');
+    return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+  };
+
+  // 开始刷新
+  const startRefresh = () => {
+    if (isRefreshing) return;
+
+    setIsRefreshing(true);
+    setElapsedSeconds(0);
+    setRefreshError(null);
+
+    // 启动计时器
+    refreshTimerRef.current = setInterval(() => {
+      setElapsedSeconds(prev => prev + 1);
+    }, 1000);
+
+    // 模拟 AI 分析过程（实际项目中替换为真实 API 调用）
+    // 这里用 setTimeout 模拟，实际使用时替换为 fetch/axios 调用
+    simulateRefresh();
+  };
+
+  // 模拟刷新过程（实际项目替换为真实 API）
+  const simulateRefresh = () => {
+    // 模拟 5-10 秒的分析时间，随机成功或失败
+    const duration = 5000 + Math.random() * 5000;
+    const willSucceed = Math.random() > 0.2; // 80% 成功率
+
+    setTimeout(() => {
+      if (refreshTimerRef.current) {
+        clearInterval(refreshTimerRef.current);
+        refreshTimerRef.current = null;
+      }
+
+      if (willSucceed) {
+        // 成功：更新时间戳
+        setLastUpdateTime(getCurrentTimeString());
+        setIsRefreshing(false);
+        setElapsedSeconds(0);
+      } else {
+        // 失败：显示错误
+        const errors = ['网络连接中断，请检查网络后重试', 'AI 分析超时，请稍后重试', '系统繁忙，请稍后重试'];
+        setRefreshError(errors[Math.floor(Math.random() * errors.length)]);
+        setIsRefreshing(false);
+        setElapsedSeconds(0);
+      }
+    }, duration);
+  };
+
+  // 清理计时器
+  useEffect(() => {
+    return () => {
+      if (refreshTimerRef.current) {
+        clearInterval(refreshTimerRef.current);
+      }
+    };
+  }, []);
+
+  // 自动隐藏错误提示
+  useEffect(() => {
+    if (refreshError) {
+      const timer = setTimeout(() => {
+        setRefreshError(null);
+      }, 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [refreshError]);
+
+  const toggleAdopt = (taskId: string) => {
+    setAdoptedTaskIds((prev) =>
+      prev.includes(taskId)
+        ? prev.filter(id => id !== taskId)
+        : [...prev, taskId]
+    );
   };
 
   // 每个维度的 AI 解读内容（含评级和综合解析）
@@ -557,10 +826,10 @@ export default function CustomerDetail() {
 
   // 默认展开第一条未完成的行动，若全部完成则展开第一条
   useEffect(() => {
-    if (tasks.length === 0) return;
-    const firstPending = tasks.find(t => t.status !== 'completed');
-    setOpenTaskId((prev) => prev ?? (firstPending ? firstPending.id : tasks[0].id));
-  }, [tasks]);
+    if (displayTasks.length === 0) return;
+    const firstPending = displayTasks.find(t => t.status !== 'completed');
+    setOpenTaskId((prev) => prev ?? (firstPending ? firstPending.id : displayTasks[0].id));
+  }, [displayTasks]);
 
   return (
     <div className="flex flex-col">
@@ -576,8 +845,53 @@ export default function CustomerDetail() {
             </button>
             <div>
               <h1 className="text-xl font-semibold text-gray-900">{customer.companyName}</h1>
-              <p className="text-sm text-gray-500 mt-1">{customer.industry} · 成立{2024 - customer.establishedYear}年</p>
             </div>
+          </div>
+          <div className="flex items-center gap-2 relative">
+            {isRefreshing ? (
+              // 刷新中状态
+              <div className="flex items-center gap-2 px-3 py-1.5 bg-blue-50 rounded-lg">
+                <Loader2 size={14} className="text-blue-500 animate-spin" />
+                <span className="text-xs text-blue-600 font-medium">
+                  AI 分析中... 已等待 {formatElapsedTime(elapsedSeconds)}
+                </span>
+              </div>
+            ) : (
+              // 正常状态
+              <>
+                <span className="text-xs text-gray-400">数据更新于 {lastUpdateTime}</span>
+                <button
+                  onClick={startRefresh}
+                  className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-all"
+                  title="刷新数据"
+                >
+                  <RefreshCw size={14} />
+                </button>
+              </>
+            )}
+
+            {/* 错误提示气泡 */}
+            <AnimatePresence>
+              {refreshError && (
+                <motion.div
+                  initial={{ opacity: 0, y: -10, scale: 0.95 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: -10, scale: 0.95 }}
+                  className="absolute top-full right-0 mt-2 z-50"
+                >
+                  <div className="flex items-center gap-2 px-3 py-2 bg-red-50 border border-red-200 rounded-lg shadow-lg">
+                    <AlertCircle size={14} className="text-red-500 flex-shrink-0" />
+                    <span className="text-xs text-red-600">{refreshError}</span>
+                    <button
+                      onClick={() => setRefreshError(null)}
+                      className="p-0.5 text-red-400 hover:text-red-600 transition-colors"
+                    >
+                      <X size={12} />
+                    </button>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
         </div>
       </header>
@@ -597,35 +911,67 @@ export default function CustomerDetail() {
                 <Building2 size={24} className="text-white" />
               </div>
               <div className="flex-1">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <h2 className="text-lg font-semibold text-gray-900">{customer.companyName}</h2>
-                    <span className="px-2 py-1 bg-blue-100 text-blue-700 rounded-full text-xs font-medium">{profile.cooperationAndContribution.customerLevel}</span>
-                  </div>
-                  <span className="text-xs text-gray-400">数据更新于 2024-01-15</span>
+                <div className="flex items-center gap-2">
+                  <h2 className="text-lg font-semibold text-gray-900">{customer.companyName}</h2>
+                  <span className="px-2 py-1 bg-blue-100 text-blue-700 rounded-full text-xs font-medium">{profile.cooperationAndContribution.customerLevel}</span>
                 </div>
                 <div className="flex items-center gap-3 text-sm text-gray-500 mt-1">
                   <span className="flex items-center gap-1"><Briefcase size={14} />{customer.industry}</span>
-                  <span className="flex items-center gap-1"><MapPin size={14} />杭州市</span>
-                  <span>{profile.businessFundamentals.basicInfo.employeeCount}人</span>
                 </div>
               </div>
             </div>
 
-            {/* AI 核心洞察 */}
-            <div className="bg-green-50 rounded-lg p-4 mb-4">
-              <div className="flex items-start gap-3">
-                <div className="bg-green-500 rounded-lg flex items-center justify-center flex-shrink-0" style={{ width: '32px', height: '32px' }}>
-                  <Sparkles size={16} className="text-white" />
-                </div>
-                <div>
-                  <div className="text-xs font-semibold text-green-700 mb-2">AI 核心洞察</div>
-                  <p className="text-sm text-gray-700 leading-relaxed">
-                    <span className="text-green-600 font-semibold">优质高新技术企业</span>，经营稳健，有明确<span className="text-green-600 font-semibold">扩产融资需求约2000万</span>，票据业务活跃，建议优先推进<span className="text-green-600 font-semibold">科创信用贷</span>。
-                  </p>
+            {/* AI 核心洞察 - 空状态下依然有兜底内容 */}
+            {isError ? (
+              <div className="bg-red-50 rounded-lg p-4 mb-4 border border-red-200 border-dashed">
+                <div className="flex items-start gap-3">
+                  <div className="bg-red-400 rounded-lg flex items-center justify-center flex-shrink-0" style={{ width: '32px', height: '32px' }}>
+                    <AlertCircle size={16} className="text-white" />
+                  </div>
+                  <div className="flex-1">
+                    <div className="text-xs font-semibold text-red-600 mb-2">AI 核心洞察</div>
+                    <div className="flex items-center gap-2 text-sm text-red-500">
+                      <span>洞察分析服务暂时不可用</span>
+                    </div>
+                    <p className="text-xs text-gray-500 mt-2">
+                      错误代码：<span className="font-mono">AI_INSIGHT_503</span> · 请稍后重试或联系技术支持
+                    </p>
+                    <button className="mt-3 flex items-center gap-1.5 px-3 py-1.5 bg-red-500 hover:bg-red-600 text-white text-xs font-medium rounded-lg transition-colors">
+                      <RefreshCw size={12} />
+                      重新加载
+                    </button>
+                  </div>
                 </div>
               </div>
-            </div>
+            ) : isEmpty ? (
+              <div className="bg-blue-50 rounded-lg p-4 mb-4">
+                <div className="flex items-start gap-3">
+                  <div className="bg-blue-500 rounded-lg flex items-center justify-center flex-shrink-0" style={{ width: '32px', height: '32px' }}>
+                    <Sparkles size={16} className="text-white" />
+                  </div>
+                  <div>
+                    <div className="text-xs font-semibold text-blue-700 mb-2">AI 核心洞察</div>
+                    <p className="text-sm text-gray-700 leading-relaxed">
+                      <span className="text-blue-600 font-semibold">待开发潜力客户</span>，建议先完成<span className="text-blue-600 font-semibold">风险初筛</span>，确认无重大风险后<span className="text-blue-600 font-semibold">建联关键决策人</span>，快速推进首次拜访。
+                    </p>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="bg-green-50 rounded-lg p-4 mb-4">
+                <div className="flex items-start gap-3">
+                  <div className="bg-green-500 rounded-lg flex items-center justify-center flex-shrink-0" style={{ width: '32px', height: '32px' }}>
+                    <Sparkles size={16} className="text-white" />
+                  </div>
+                  <div>
+                    <div className="text-xs font-semibold text-green-700 mb-2">AI 核心洞察</div>
+                    <p className="text-sm text-gray-700 leading-relaxed">
+                      <span className="text-green-600 font-semibold">优质高新技术企业</span>，经营稳健，有明确<span className="text-green-600 font-semibold">扩产融资需求约2000万</span>，票据业务活跃，建议优先推进<span className="text-green-600 font-semibold">科创信用贷</span>。
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
 
           </motion.section>
 
@@ -647,15 +993,39 @@ export default function CustomerDetail() {
               >
                 <h3 className="text-lg font-semibold text-gray-900 mb-4">AI 客户画像</h3>
 
-                {/* Punch Card 图 + 内嵌解读 */}
-                <div className="flex justify-center">
-                  <PunchCardChart
-                    data={punchCardData}
-                    selectedDimension={selectedDimension}
-                    onDimensionClick={(dimension) => setSelectedDimension(selectedDimension === dimension ? null : dimension)}
-                    dimensionInterpretations={dimensionInterpretations}
+                {isEmpty ? (
+                  <EmptyStateCard
+                    icon={Database}
+                    title="画像数据收集中"
+                    descriptions={[
+                      "客户数据维度还不够丰富，AI 需要更多信息来构建完整画像",
+                      "不过别担心，每一次互动都在帮助 AI 更懂这位客户！",
+                      "数据越丰富，AI 画像越精准，营销越有效",
+                      "完善客户信息，让 AI 成为您的得力助手",
+                      "好的开始是成功的一半，先从基础信息开始吧"
+                    ]}
+                    tip="补充客户的行业、经营、融资信息可加速画像生成"
+                    color="blue"
                   />
-                </div>
+                ) : isError ? (
+                  <ErrorStateCard
+                    icon={AlertCircle}
+                    title="画像服务连接失败"
+                    description="无法获取客户画像数据，可能是网络问题或服务繁忙"
+                    errorCode="PROFILE_TIMEOUT"
+                    onRetry={() => window.location.reload()}
+                  />
+                ) : (
+                  /* Punch Card 图 + 内嵌解读 */
+                  <div className="flex justify-center">
+                    <PunchCardChart
+                      data={punchCardData}
+                      selectedDimension={selectedDimension}
+                      onDimensionClick={(dimension) => setSelectedDimension(selectedDimension === dimension ? null : dimension)}
+                      dimensionInterpretations={dimensionInterpretations}
+                    />
+                  </div>
+                )}
               </motion.section>
 
               {/* AI 产品推荐 */}
@@ -667,6 +1037,29 @@ export default function CustomerDetail() {
               >
                 <h3 className="text-lg font-semibold text-gray-900 mb-4">AI 产品推荐</h3>
 
+                {isEmpty ? (
+                  <EmptyStateCard
+                    icon={Search}
+                    title="正在匹配适合的产品"
+                    descriptions={[
+                      "AI 正在根据客户特征寻找最合适的产品组合",
+                      "了解客户需求越深入，推荐就越精准！",
+                      "每位客户都值得专属的金融方案",
+                      "好产品配好客户，AI 帮您精准匹配",
+                      "产品推荐，从了解客户开始"
+                    ]}
+                    tip="记录客户的业务痛点和资金需求，帮助 AI 更好地匹配产品"
+                    color="green"
+                  />
+                ) : isError ? (
+                  <ErrorStateCard
+                    icon={AlertCircle}
+                    title="推荐引擎响应异常"
+                    description="产品推荐服务暂时无法响应，我们正在紧急修复中"
+                    errorCode="RECOMMEND_ERR_500"
+                    onRetry={() => window.location.reload()}
+                  />
+                ) : (
                 <div className="flex flex-col lg:flex-row gap-6">
                   {/* 左侧：用户需求词云 */}
                   <div className="w-full lg:w-2/5 min-w-0">
@@ -752,7 +1145,6 @@ export default function CustomerDetail() {
                                     <div className="flex items-center justify-between mb-1">
                                       <h4 className="text-sm font-semibold text-gray-900">{product.name}</h4>
                                     </div>
-                                    <p className="text-xs text-gray-600 mb-2">{product.summary}</p>
                                     <div className="bg-gray-50 rounded p-2">
                                       <div className="flex items-center gap-1 mb-1">
                                         <Lightbulb size={12} className="text-orange-500" />
@@ -778,6 +1170,7 @@ export default function CustomerDetail() {
                     </AnimatePresence>
                   </div>
                 </div>
+                )}
               </motion.section>
             </div>
 
@@ -793,40 +1186,76 @@ export default function CustomerDetail() {
                 <h3 className="text-lg font-semibold text-gray-900">AI 行动手册</h3>
               </div>
 
+              {/* 空状态下：行动策略和待办行动有兜底内容，只有优秀案例显示空状态 */}
+              {isError ? (
+                <div className="flex-1 flex flex-col gap-4">
+                  {/* 异常状态 - 行动策略 */}
+                  <ErrorStateCard
+                    icon={AlertCircle}
+                    title="策略服务异常"
+                    description="行动策略生成服务暂时不可用"
+                    errorCode="STRATEGY_503"
+                    onRetry={() => window.location.reload()}
+                  />
+
+                  {/* 异常状态 - 案例匹配 */}
+                  <ErrorStateCard
+                    icon={AlertCircle}
+                    title="案例库连接失败"
+                    description="无法获取相似案例，请检查网络连接"
+                    errorCode="CASE_TIMEOUT"
+                    onRetry={() => window.location.reload()}
+                  />
+
+                  {/* 异常状态 - 行动建议 */}
+                  <ErrorStateCard
+                    icon={AlertCircle}
+                    title="行动建议加载失败"
+                    description="系统繁忙，暂时无法生成行动建议"
+                    onRetry={() => window.location.reload()}
+                  />
+                </div>
+              ) : (
+              <>
               {/* 行动策略 */}
               <div className="bg-blue-50 rounded-lg p-4 mb-4 flex-shrink-0">
                 <div className="flex items-center gap-2 mb-3">
                   <Lightbulb size={16} className="text-blue-600" />
                   <span className="text-sm font-semibold text-blue-700">行动策略</span>
                 </div>
-                <p className="text-sm text-gray-700 leading-relaxed mb-3">{handbook.summary}</p>
+                <p className="text-sm text-gray-700 leading-relaxed mb-3">
+                  {isEmpty
+                    ? '新客户冷启动三步走：风险初筛→电话建联→约见拜访。首先完成企业风险排查，确认无重大风险后建立关键人联系，快速推进首次见面。'
+                    : handbook.summary
+                  }
+                </p>
                 <div className="grid grid-cols-2 gap-2">
                   <div className="flex items-center gap-2 bg-white rounded-lg px-3 py-2 border border-blue-100">
                     <Sparkles size={14} className="text-blue-600" />
                     <div>
                       <div className="text-xs text-gray-500">主攻方向</div>
-                      <div className="text-sm font-medium text-gray-800 truncate">锁定核心决策人+差异化报价</div>
+                      <div className="text-sm font-medium text-gray-800 truncate">{isEmpty ? '建立关键人联系' : '锁定核心决策人+差异化报价'}</div>
                     </div>
                   </div>
                   <div className="flex items-center gap-2 bg-white rounded-lg px-3 py-2 border border-blue-100">
                     <Target size={14} className="text-blue-600" />
                     <div>
                       <div className="text-xs text-gray-500">关键动作</div>
-                      <div className="text-sm font-medium text-gray-800 truncate">对标竞品利率，突出交叉产品组合</div>
+                      <div className="text-sm font-medium text-gray-800 truncate">{isEmpty ? '风险初筛+电话建联' : '对标竞品利率，突出交叉产品组合'}</div>
                     </div>
                   </div>
                   <div className="flex items-center gap-2 bg-white rounded-lg px-3 py-2 border border-blue-100">
                     <TrendingUp size={14} className="text-blue-600" />
                     <div>
                       <div className="text-xs text-gray-500">目标</div>
-                      <div className="text-sm font-medium text-gray-800 truncate">提高授信占比 + 成交转化</div>
+                      <div className="text-sm font-medium text-gray-800 truncate">{isEmpty ? '完成首次拜访' : '提高授信占比 + 成交转化'}</div>
                     </div>
                   </div>
                   <div className="flex items-center gap-2 bg-white rounded-lg px-3 py-2 border border-blue-100">
                     <Clock size={14} className="text-blue-600" />
                     <div>
                       <div className="text-xs text-gray-500">节奏</div>
-                      <div className="text-sm font-medium text-gray-800 truncate">本月完成沟通/报价/质检闭环</div>
+                      <div className="text-sm font-medium text-gray-800 truncate">{isEmpty ? '本周完成风险初筛和电话建联' : '本月完成沟通/报价/质检闭环'}</div>
                     </div>
                   </div>
                 </div>
@@ -838,6 +1267,28 @@ export default function CustomerDetail() {
                     <span className="text-sm font-semibold text-purple-700">优秀营销案例</span>
                   </div>
 
+                  {/* 空状态下显示案例匹配中 */}
+                  {isEmpty ? (
+                    <div className="bg-gray-50 rounded-lg p-6 border border-gray-200 border-dashed">
+                      <div className="flex flex-col items-center text-center">
+                        <div className="w-10 h-10 bg-purple-100 rounded-full flex items-center justify-center mb-3">
+                          <Award size={20} className="text-purple-400" />
+                        </div>
+                        <h4 className="text-sm font-medium text-gray-700 mb-2">案例匹配中</h4>
+                        <p className="text-xs text-gray-500 max-w-xs min-h-[32px]">
+                          <RotatingText
+                            texts={[
+                              "系统正在寻找与当前客户最相似的成功案例",
+                              "他山之石，可以攻玉",
+                              "优秀经验值得借鉴，AI 正在筛选",
+                              "找到对的案例，事半功倍"
+                            ]}
+                          />
+                        </p>
+                      </div>
+                    </div>
+                  ) : (
+                  <>
                   {/* 产品类型Tab */}
                   <div className="flex gap-2 mb-3">
                     <button
@@ -1156,6 +1607,8 @@ export default function CustomerDetail() {
                       </>
                     )}
                   </div>
+                  </>
+                  )}
                 </div>
               </div>
 
@@ -1163,20 +1616,36 @@ export default function CustomerDetail() {
               <div className="flex-1 flex flex-col min-h-0">
                 <div className="flex items-center justify-between mb-3 flex-shrink-0">
                   <span className="text-sm font-medium text-gray-700">AI 行动建议</span>
-                  <span className="px-2 py-1 bg-green-100 text-green-700 text-xs rounded-full font-medium">
-                    {tasks.filter((t) => !adoptedTaskIds.includes(t.id)).length} 项待行动
-                  </span>
+                  <div className="flex items-center gap-2">
+                    {displayTasks.filter((t) => !adoptedTaskIds.includes(t.id)).length > 0 && (
+                      <button
+                        onClick={() => {
+                          const pendingTaskIds = displayTasks
+                            .filter((t) => !adoptedTaskIds.includes(t.id))
+                            .map((t) => t.id);
+                          setAdoptedTaskIds((prev) => [...prev, ...pendingTaskIds]);
+                        }}
+                        className="px-3 py-1 bg-green-500 text-white text-xs rounded-full font-medium hover:bg-green-600 transition-all flex items-center gap-1"
+                      >
+                        <Check size={12} />
+                        一键采纳
+                      </button>
+                    )}
+                    <button
+                      onClick={() => {
+                        // 跳转到行方APP待办列表（预留接口）
+                        console.log('跳转到待办列表');
+                      }}
+                      className="px-3 py-1 bg-gray-100 text-gray-600 text-xs rounded-full font-medium hover:bg-gray-200 transition-all flex items-center gap-1"
+                    >
+                      <ClipboardList size={12} />
+                      查看待办
+                    </button>
+                  </div>
                 </div>
 
                 <div className="space-y-3 overflow-y-auto flex-1 mb-3">
-                  {[...tasks]
-                    .sort((a, b) => {
-                      // 已行动的排在后面
-                      const aActioned = adoptedTaskIds.includes(a.id) ? 1 : 0;
-                      const bActioned = adoptedTaskIds.includes(b.id) ? 1 : 0;
-                      return aActioned - bActioned;
-                    })
-                    .map((task, idx) => {
+                  {displayTasks.map((task, idx) => {
                       const isOpen = openTaskId ? openTaskId === task.id : idx === 0;
 
                       return (
@@ -1184,35 +1653,41 @@ export default function CustomerDetail() {
                           key={task.id}
                           className="rounded-lg border p-3 transition-all bg-white border-gray-200"
                         >
-                          <button
-                            onClick={() => setOpenTaskId(isOpen ? null : task.id)}
-                            className="flex items-start gap-2 text-left w-full"
-                          >
-                            <ChevronRight
-                              size={16}
-                              className={`mt-1 flex-shrink-0 text-gray-400 transition-transform ${isOpen ? 'rotate-90' : ''}`}
-                            />
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-2 flex-wrap">
-                                <h5 className="text-sm font-medium text-gray-800">
-                                  {task.title}
-                                </h5>
-                                {adoptedTaskIds.includes(task.id) ? (
-                                  <span className="px-2 py-0.5 rounded-full text-xs bg-gray-100 text-gray-500 flex items-center gap-1">
-                                    <Check size={10} />
-                                    已行动
-                                  </span>
-                                ) : (
-                                  <span className="px-2 py-0.5 rounded-full text-xs bg-green-50 text-green-700">待行动</span>
+                          <div className="flex items-start gap-2">
+                            <button
+                              onClick={() => setOpenTaskId(isOpen ? null : task.id)}
+                              className="flex items-start gap-2 text-left flex-1 min-w-0"
+                            >
+                              <ChevronRight
+                                size={16}
+                                className={`mt-1 flex-shrink-0 text-gray-400 transition-transform ${isOpen ? 'rotate-90' : ''}`}
+                              />
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <h5 className="text-sm font-medium text-gray-800">
+                                    {task.title}
+                                  </h5>
+                                </div>
+                                {!isOpen && (
+                                  <p className="text-xs text-gray-500 truncate mt-1">
+                                    {task.description}
+                                  </p>
                                 )}
                               </div>
-                              {!isOpen && (
-                                <p className="text-xs text-gray-500 truncate mt-1">
-                                  {task.description}
-                                </p>
-                              )}
-                            </div>
-                          </button>
+                            </button>
+                            {/* 采纳按钮 - 右上角 */}
+                            <button
+                              onClick={(e) => { e.stopPropagation(); toggleAdopt(task.id); }}
+                              className={`flex-shrink-0 px-3 py-1 rounded-full text-xs font-medium flex items-center gap-1 transition-all ${
+                                adoptedTaskIds.includes(task.id)
+                                  ? 'bg-blue-100 text-blue-600 hover:bg-blue-200'
+                                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                              }`}
+                            >
+                              <Check size={12} />
+                              {adoptedTaskIds.includes(task.id) ? '已采纳' : '采纳'}
+                            </button>
+                          </div>
 
                           {isOpen && (
                             <div className="mt-3">
@@ -1231,29 +1706,22 @@ export default function CustomerDetail() {
                                     <p className="text-sm text-gray-600 leading-relaxed bg-blue-50 rounded p-2">{task.suggestedScript}</p>
                                   </div>
                                 )}
-                                {/* 行动按钮 */}
+                                {/* 行动按钮 - 始终可点击，触发相应动作并自动加入待办 */}
                                 {(() => {
                                   const config = actionCategoryConfig[task.category];
                                   if (!config) return null;
                                   const ActionIcon = config.icon;
-                                  const isActioned = adoptedTaskIds.includes(task.id);
-
-                                  if (isActioned) {
-                                    return (
-                                      <button
-                                        className="w-full mt-3 rounded-xl font-medium flex items-center justify-center gap-2 transition-all bg-gray-100 text-gray-500 cursor-default"
-                                        style={{ padding: '10px 16px', fontSize: '14px' }}
-                                        disabled
-                                      >
-                                        <Check size={16} />
-                                        已完成行动
-                                      </button>
-                                    );
-                                  }
 
                                   return (
                                     <button
-                                      onClick={() => adoptTask(task.id)}
+                                      onClick={() => {
+                                        // 预留：触发相应动作（如拨打电话、跳转等）
+                                        console.log('触发行动:', task.title, task.category);
+                                        // 自动加入待办列表（如果还未采纳）
+                                        if (!adoptedTaskIds.includes(task.id)) {
+                                          setAdoptedTaskIds((prev) => [...prev, task.id]);
+                                        }
+                                      }}
                                       className={`w-full mt-3 rounded-xl font-medium flex items-center justify-center gap-2 transition-all shadow-sm ${config.bg} ${config.text} ${config.hoverBg}`}
                                       style={{ padding: '10px 16px', fontSize: '14px' }}
                                     >
@@ -1270,6 +1738,8 @@ export default function CustomerDetail() {
                     })}
                 </div>
               </div>
+              </>
+              )}
             </motion.aside>
           </div>
 

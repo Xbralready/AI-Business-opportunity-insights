@@ -3,20 +3,23 @@ import Layout from './components/Layout';
 import CustomerList from './pages/CustomerList';
 import CustomerDetail from './pages/CustomerDetail';
 import Analytics from './pages/Analytics';
+import { PageStateProvider } from './context/PageStateContext';
 
 function App() {
   return (
-    <BrowserRouter>
-      <Routes>
-        <Route path="/" element={<Layout />}>
-          <Route index element={<Navigate to="/customers" replace />} />
-          <Route path="customers" element={<CustomerList />} />
-          <Route path="customers/:id" element={<CustomerDetail />} />
-          <Route path="analytics" element={<Analytics />} />
-          <Route path="profile" element={<PlaceholderPage title="个人中心" />} />
-        </Route>
-      </Routes>
-    </BrowserRouter>
+    <PageStateProvider>
+      <BrowserRouter>
+        <Routes>
+          <Route path="/" element={<Layout />}>
+            <Route index element={<Navigate to="/customers" replace />} />
+            <Route path="customers" element={<CustomerList />} />
+            <Route path="customers/:id" element={<CustomerDetail />} />
+            <Route path="analytics" element={<Analytics />} />
+            <Route path="profile" element={<PlaceholderPage title="个人中心" />} />
+          </Route>
+        </Routes>
+      </BrowserRouter>
+    </PageStateProvider>
   );
 }
 
